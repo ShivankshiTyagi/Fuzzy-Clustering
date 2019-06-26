@@ -1,0 +1,101 @@
+function [center, U] = fcms(data, cluster_n)
+    [row, col] = size(data);
+    U = rand(row, col, cluster_n);
+    dep_sum = sum(U, 3);
+    dep_sum = repmat(dep_sum, [1,1, cluster_n]);
+    U = U./dep_sum;
+    
+    Up = zeros(row, col, cluster_n);
+    
+    b_field=repmat(0.01,[row,col]);
+
+    m=2;            %weighting exponent
+    epsilon=0.01;   %termination criterion
+    maxit=10;   %maximum iterations
+    Nr =8;          %number of neighbours
+    Ne=[-1 -1; -1  0; -1  1; 0 -1;  0  1; 1 -1;  1  0;  1  1]; %neighbour coordinates of a pixel
+    alpha=0.85;
+    gamma=zeros(cluster_n,1);
+    D = zeros(cluster_n,1);
+    
+    center = zeros(cluster_n,1); 
+    center_old=zeros(size(center));
+    
+    %{
+    for i=1:cluster_n
+        center(i,1) = sum(sum(U(:,:,i).*data))/sum(sum(U(:,:,i)));
+    end
+    %}
+    center=[0.42;0.56;0.68];
+    
+    itt=0;
+    while((sum(sum((center-center_old).^2))>=epsilon)&&(itt<=maxit))
+        itt=itt+1;
+
+        nom=zeros(cluster_n,1); 
+        den=zeros(cluster_n);
+
+        %Unow = zeros(size(U));
+        for i=1:row
+           for j=1:col
+                x=min(max(i,2),row-1);
+                y=min(max(j,2),col-1);
+                Nx=repmat(x,[Nr 1])+Ne(:,1); 
+                Ny=repmat(y,[Nr 1])+Ne(:,2);
+
+                for k=1:cluster_n
+                    for a=1:Nr
+                        gamma(k,1)=gamma(k,1)+((data(Nx(a),Ny(a))-b_field(Nx(a),Ny(a)))-center(k,1))^2;
+                    end
+                    D(k,1) = sum( (data(i,j)-b_field(i,j)-center(k,:)).^2 );
+                end
+
+           
+                 % step 3a, update the prototypes (means) of the clusters
+                nck=0;
+                for a=1:Nr
+                    nck=nck+(data(Nx(a),Ny(a))-b_field(Nx(a),Ny(a)));
+                end
+                 
+                s = (data(i,j)-b_field(i,j)) + (alpha / Nr)*nck;
+
+            % step 2, Calculate robust partition matrix
+            for ii=1:cluster_n
+                dent=0;
+                a = D(ii) + (alpha /Nr) * gamma(ii);
+                for jj=1:cluster_n
+                    b = D(jj) + (alpha /Nr) * gamma(jj);
+                    if(abs(b)<eps), b= eps; end
+                    dent = dent + (a/b)^(1/(m-1));
+                end
+                if(abs(dent)<eps), dent=eps; end
+                U(i,j, ii) = 1 / dent; Up(i,j,ii) = U(i,j,ii).^m;
+
+                % step 3b, update the prototypes (means) of the clusters
+                nom(ii,:)=nom(ii,:)+Up(i,j,ii)*s;
+                den(ii)=den(ii)+Up(i,j,ii);
+            end
+          end
+        end
+
+        center_old=center;
+        for i=1:cluster_n
+            if(abs(den(i))<eps), den(i)=eps; end
+            center(i,:)=nom(i,:)/((1+alpha)*den(i));
+        end
+
+        % step 4, Estimate the (new) Bias-Field
+        for i=1:row
+            for j=1:col
+                nomt=0;
+                dent=0;
+                for k=1:cluster_n
+                    nomt=nomt+Up(i,j,k)*center(k,1);
+                    dent=dent+Up(i,j,k);
+                end
+                if(abs(dent)<eps), dent=eps; end
+                b_field(i,j)=data(i,j) - nomt/dent;
+            end
+        end
+    end
+end   
